@@ -29,7 +29,3 @@ func (cli GDriveCLI) GetFiles(parentID string) (*drive.FileList, error) {
 	}
 	return r1, nil
 }
-
-func (cli GDriveCLI) DownloadFiles(ids []string) {
-
-}

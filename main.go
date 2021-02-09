@@ -7,14 +7,17 @@ import (
 	"gdrivecli/pkg/utils"
 	"io/ioutil"
 	"log"
-	"os"
 
 	"github.com/AlecAivazis/survey/v2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
+
+	"path/filepath"
 )
 
 func main() {
+
+	var err error
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
@@ -47,50 +50,37 @@ func main() {
 		fmt.Printf("|%-30v|%-20v\n", file.Name, utils.ByteCountIEC(file.Size))
 		totalSize += file.Size
 	}
-	fmt.Printf("Total size of files to download: %s\n", utils.ByteCountIEC(totalSize))
+
+	totalDownloadSize := utils.ByteCountIEC(totalSize)
 	continueDL := false
-	promptUse := &survey.Confirm{
-		Message: "Do you want to continue?",
+	rootFolder := ""
+	for !continueDL {
+		rootFolder, err = utils.ChooseFolder()
+		if err != nil {
+			log.Fatalf("Error choosing folder: %w", err)
+		}
+		diskName := filepath.VolumeName(rootFolder)
+		freeDiskSpace, err := utils.GetDiskUsage(diskName)
+		if err != nil {
+			log.Fatalf("Error getting disk space: %w", err)
+		}
+
+		msg := fmt.Sprintf(`Are you sure you want to download files to %s?
+Total Download Size: %s
+Free Space On Drive: %s`, rootFolder, totalDownloadSize, freeDiskSpace)
+		promptUse := &survey.Confirm{
+			Message: msg,
+		}
+		if err := survey.AskOne(promptUse, &continueDL); err != nil {
+			log.Fatalf("Error prompting: %v", err)
+		}
 	}
-	if err := survey.AskOne(promptUse, &continueDL); err != nil {
-		log.Fatalf("Error prompting: %v", err)
+
+	fmt.Printf("Saving files to %s\n", rootFolder)
+
+	for fileName := range cli.FilesToDownload {
+
+		fmt.Printf("Lets download: %s\n", fileName)
+		cli.DownloadFile(rootFolder, fileName)
 	}
-	if !continueDL {
-		fmt.Println("Exiting...")
-		os.Exit(0)
-	}
-
-	// TODO - choose folder
-	rootPath := "E:/Users/Sean/Stuff/Media/TV Shows/Taskmaster/"
-	fmt.Printf("Saving files to %s\n", rootPath)
-
-	for _, file := range cli.FilesToDownload {
-		cli.DownloadFile(rootPath, file.Name)
-	}
-	// 	fmt.Printf("Downloading %s...\n", file.Name)
-	// 	path := rootPath + file.Name
-	// 	f, err := os.Create(path)
-	// 	defer f.Close()
-	// 	if err != nil {
-	// 		log.Fatalf("Unable to create file: %v", err)
-	// 	}
-
-	// 	waitChan := make(chan struct{})
-	// 	ctx, cancel := context.WithCancel(context.Background())
-	// 	go utils.DisplayProgress(ctx, waitChan, f, file.Size)
-
-	// 	resp, err := srv.Files.Get(file.Id).Download()
-	// 	if err != nil {
-	// 		log.Fatalf("Unable to download file: %v", err)
-	// 	}
-	// 	defer resp.Body.Close()
-	// 	_, err = io.Copy(f, resp.Body)
-	// 	if err != nil {
-	// 		log.Fatalf("Unable copy file: %v", err)
-	// 	}
-
-	// 	cancel()
-	// 	<-waitChan
-	// 	// need to wait here
-	// }
 }

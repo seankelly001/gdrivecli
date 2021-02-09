@@ -3,10 +3,14 @@ package utils
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/ermanimer/progress_bar"
+	"github.com/harry1453/go-common-file-dialog/cfd"
+	"github.com/harry1453/go-common-file-dialog/cfdutil"
+	"github.com/minio/minio/pkg/disk"
 )
 
 func ByteCountIEC(b int64) string {
@@ -37,7 +41,6 @@ func DisplayProgress(ctx context.Context, waitChan chan struct{}, f *os.File, to
 	for {
 		select {
 		case <-ctx.Done():
-			//forever <- struct{}{}
 			pb.Update(float64(totalSize) / 1024 / 1024)
 			pb.Stop()
 			waitChan <- struct{}{}
@@ -57,4 +60,26 @@ func DisplayProgress(ctx context.Context, waitChan chan struct{}, f *os.File, to
 		}
 		time.Sleep(1000 * time.Millisecond)
 	}
+}
+
+func ChooseFolder() (string, error) {
+	result, err := cfdutil.ShowPickFolderDialog(cfd.DialogConfig{
+		Title:  "Pick Folder",
+		Role:   "PickFolderExample",
+		Folder: "C:\\",
+	})
+	if err != nil {
+		return "", err
+	}
+	log.Printf("Chosen folder: %s\n", result)
+	return result, nil
+}
+
+func GetDiskUsage(diskName string) (string, error) {
+	di, err := disk.GetInfo(diskName)
+	if err != nil {
+		return "", err
+	}
+	freeSpace := int64(di.Free)
+	return ByteCountIEC(freeSpace), nil
 }
