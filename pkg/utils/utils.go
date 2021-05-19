@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ermanimer/progress_bar"
 	"github.com/harry1453/go-common-file-dialog/cfd"
 	"github.com/harry1453/go-common-file-dialog/cfdutil"
 	"github.com/minio/minio/pkg/disk"
+	"github.com/rivo/tview"
 )
 
 func ByteCountIEC(b int64) string {
@@ -82,4 +84,21 @@ func GetDiskUsage(diskName string) (string, error) {
 	}
 	freeSpace := int64(di.Free)
 	return ByteCountIEC(freeSpace), nil
+}
+
+func FilterNodeChildren(children []*tview.TreeNode, key string) *tview.TreeNode {
+
+	key = strings.ToLower(key)
+	previousNode := children[0]
+	for _, node := range children {
+		text := strings.ToLower(node.GetText())
+		firstChar := text[:1]
+		if firstChar == key {
+			return node
+		} else if firstChar > key {
+			return previousNode
+		}
+		previousNode = node
+	}
+	return children[len(children)-1]
 }

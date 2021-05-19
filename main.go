@@ -7,8 +7,10 @@ import (
 	"gdrivecli/pkg/utils"
 	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/rivo/tview"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 
@@ -37,17 +39,38 @@ func main() {
 		log.Fatalf("Unable to retrieve Drive client: %v", err)
 	}
 
+	app := tview.NewApplication()
+
 	cli := gcli.GDriveCLI{
 		Service:         srv,
 		FilesToDownload: make(map[string]*drive.File, 0),
+		App:             app,
 	}
 
-	cli.Display("root")
+	tree := cli.GenerateTree()
+	cli.Tree = tree
+
+	err = cli.Display()
+	if err != nil {
+		log.Fatalf("Unable to start application: %v", err)
+	}
+
+	if len(cli.FilesToDownload) == 0 {
+		fmt.Println("no files to download")
+		os.Exit(0)
+	}
+
+	for _, file := range cli.FilesToDownload {
+		if file.Size == 0 {
+			fmt.Printf("file is empty, will not download: %s\n", file.Name)
+			delete(cli.FilesToDownload, file.Id)
+		}
+	}
 
 	var totalSize int64
 	fmt.Printf("List of files to download:\n")
 	for _, file := range cli.FilesToDownload {
-		fmt.Printf("|%-30v|%-20v\n", file.Name, utils.ByteCountIEC(file.Size))
+		fmt.Printf("|%-60v|%-20v\n", file.Name, utils.ByteCountIEC(file.Size))
 		totalSize += file.Size
 	}
 
