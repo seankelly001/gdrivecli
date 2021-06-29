@@ -3,14 +3,11 @@ package utils
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/ermanimer/progress_bar"
-	"github.com/harry1453/go-common-file-dialog/cfd"
-	"github.com/harry1453/go-common-file-dialog/cfdutil"
 	"github.com/minio/minio/pkg/disk"
 	"github.com/rivo/tview"
 )
@@ -64,18 +61,18 @@ func DisplayProgress(ctx context.Context, waitChan chan struct{}, f *os.File, to
 	}
 }
 
-func ChooseFolder() (string, error) {
-	result, err := cfdutil.ShowPickFolderDialog(cfd.DialogConfig{
-		Title:  "Pick Folder",
-		Role:   "PickFolderExample",
-		Folder: "C:\\",
-	})
-	if err != nil {
-		return "", err
-	}
-	log.Printf("Chosen folder: %s\n", result)
-	return result, nil
-}
+// func ChooseFolder() (string, error) {
+// 	result, err := cfdutil.ShowPickFolderDialog(cfd.DialogConfig{
+// 		Title:  "Pick Folder",
+// 		Role:   "PickFolderExample",
+// 		Folder: "C:\\",
+// 	})
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	log.Printf("Chosen folder: %s\n", result)
+// 	return result, nil
+// }
 
 func GetDiskUsage(diskName string) (string, error) {
 	di, err := disk.GetInfo(diskName)
