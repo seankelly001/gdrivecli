@@ -10,6 +10,8 @@ import (
 	"github.com/ermanimer/progress_bar"
 	"github.com/minio/minio/pkg/disk"
 	"github.com/rivo/tview"
+
+	"google.golang.org/api/drive/v3"
 )
 
 func ByteCountIEC(b int64) string {
@@ -75,6 +77,7 @@ func DisplayProgress(ctx context.Context, waitChan chan struct{}, f *os.File, to
 // }
 
 func GetDiskUsage(diskName string) (string, error) {
+
 	di, err := disk.GetInfo(diskName)
 	if err != nil {
 		return "", err
@@ -83,6 +86,7 @@ func GetDiskUsage(diskName string) (string, error) {
 	return ByteCountIEC(freeSpace), nil
 }
 
+// Returns the first node in a list that matches "key"
 func FilterNodeChildren(children []*tview.TreeNode, key string) *tview.TreeNode {
 
 	key = strings.ToLower(key)
@@ -98,4 +102,26 @@ func FilterNodeChildren(children []*tview.TreeNode, key string) *tview.TreeNode 
 		previousNode = node
 	}
 	return children[len(children)-1]
+}
+
+func JumpNodePosition(cur *tview.TreeNode, children []*tview.TreeNode, pos int) *tview.TreeNode {
+
+	curPos := 0
+	for i, c := range children {
+		if cur == c {
+			curPos = i
+			break
+		}
+	}
+	newPos := curPos + pos
+	if newPos < 1 {
+		newPos = 0
+	} else if newPos >= len(children) {
+		newPos = len(children) - 1
+	}
+	return children[newPos]
+}
+
+func IsGDFolder(file *drive.File) bool {
+	return file.MimeType == "application/vnd.google-apps.folder"
 }

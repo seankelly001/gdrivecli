@@ -15,3 +15,5 @@ var TREE_GRAPHICS_COLOUR = tcell.ColorSlateBlue
 var TREE_FILE_COLOUR = tcell.ColorMediumOrchid
 var TREE_DIR_COLOUR = tcell.ColorSlateGray
 var TREE_DOWNLOAD_COLOUR = tcell.ColorHotPink
+var TREE_IN_PROGRESS_COLOUR = tcell.ColorYellowGreen
+var TREE_DOWNLOADED_COLOUR = tcell.ColorRed

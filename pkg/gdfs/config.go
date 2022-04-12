@@ -16,7 +16,7 @@ func GetGDriveService() (*drive.Service, error) {
 	}
 
 	// If modifying these scopes, delete your previously saved token.json.
-	config, err := google.ConfigFromJSON(b, drive.DriveMetadataReadonlyScope, drive.DriveReadonlyScope)
+	config, err := google.ConfigFromJSON(b, drive.DriveMetadataReadonlyScope, drive.DriveReadonlyScope, drive.DriveFileScope)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to parse client secret file to config: %v", err)
 	}

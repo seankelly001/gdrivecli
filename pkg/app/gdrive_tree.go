@@ -1,9 +1,12 @@
 package app
 
 import (
+	"fmt"
 	"gdrivecli/pkg/config"
+	"gdrivecli/pkg/errors"
+	"gdrivecli/pkg/myfile"
 	"gdrivecli/pkg/utils"
-	"log"
+	"strings"
 
 	"gdrivecli/pkg/gdfs"
 
@@ -24,6 +27,7 @@ func NewGDFSTree(a *App) *tview.TreeView {
 		Parent:   nil,
 		Virtual:  true,
 		Shared:   false,
+		OrderBy:  "name",
 	}
 	root.SetReference(rootReference)
 	root.SetExpanded(true)
@@ -40,6 +44,7 @@ func NewGDFSTree(a *App) *tview.TreeView {
 		Parent:   root,
 		Virtual:  false,
 		Shared:   false,
+		OrderBy:  "name",
 	}
 	mine.SetReference(mineReference)
 	mine.SetExpanded(false)
@@ -55,6 +60,7 @@ func NewGDFSTree(a *App) *tview.TreeView {
 		Parent:   root,
 		Virtual:  false,
 		Shared:   true,
+		OrderBy:  "name",
 	}
 	shared.SetReference(sharedReference)
 	shared.SetExpanded(false)
@@ -70,216 +76,367 @@ func NewGDFSTree(a *App) *tview.TreeView {
 	tree.SetGraphicsColor(config.TREE_GRAPHICS_COLOUR)
 	tree.SetBorderColor(config.BORDER_COLOUR)
 	tree.SetBorder(true)
-
 	tree.SetBorderPadding(1, 1, 1, 1)
+
 	return tree
 }
 
 func (a *App) GDFSNodeSelectedFunc(node *tview.TreeNode) {
+
+	//Do this to signal that work is being done
 	originalNodeText := node.GetText()
 	node.SetText(originalNodeText + "...")
 	a.tvApp.ForceDraw()
 
-	reference := node.GetReference()
-	fileReference, ok := reference.(gdfs.GDFileReference)
+	nodeRef, ok := node.GetReference().(gdfs.GDFileReference)
 	if !ok {
 		a.WriteOutput("error casting")
 		return
 	}
-
-	if fileReference.File.MimeType == "application/vnd.google-apps.folder" {
-		if !fileReference.Virtual {
+	if utils.IsGDFolder(nodeRef.File) {
+		if !nodeRef.Virtual {
 			if len(node.GetChildren()) == 0 {
 				err := a.GDFS.SetChildren(node)
 				if err != nil {
-					log.Fatalf("err: %w", err)
+					a.WriteOutput(fmt.Sprintf("error setting children: %s", err.Error()))
 				}
 			}
 		}
 		node.SetExpanded(!node.IsExpanded())
 	} else {
-		fileReference.Download = !fileReference.Download
-		if fileReference.Download {
-			a.GDFS.FilesToDownload[fileReference.File.Id] = fileReference.File
-			node.SetColor(config.TREE_DOWNLOAD_COLOUR)
-		} else {
-			delete(a.GDFS.FilesToDownload, fileReference.File.Id)
-			node.SetColor(config.TREE_FILE_COLOUR)
-		}
+		a.ToggleDownload(node, false, false)
+	}
+	node.SetText(originalNodeText)
+}
 
+//Toggle a file(node) to download
+//If force is true, it will use the download param
+//Otherwise, download is ignored
+func (a *App) ToggleDownload(node *tview.TreeNode, force, download bool) {
+	nodeRef, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		//TODO
 	}
 
-	node.SetReference(fileReference)
-	node.SetText(originalNodeText)
+	if force {
+		nodeRef.Download = download
+	} else {
+		nodeRef.Download = !nodeRef.Download
+	}
+
+	mf, ok := a.FilesToDownload[nodeRef.File.Id]
+	if ok {
+		if mf.InProgress || mf.Done {
+			return
+		}
+	}
+
+	if nodeRef.Download {
+		myFile := myfile.NewDownloadFile(nodeRef.File, node)
+		a.FilesToDownload[nodeRef.File.Id] = myFile
+
+		node.SetColor(config.TREE_DOWNLOAD_COLOUR)
+	} else {
+		delete(a.FilesToDownload, nodeRef.File.Id)
+		node.SetColor(config.TREE_FILE_COLOUR)
+	}
+	node.SetReference(nodeRef)
 }
 
 //For jumping to char
 func (a *App) GDFSTreeInputFunc(event *tcell.EventKey) *tcell.EventKey {
 
-	keyChar := string(event.Rune())
-	if event.Rune() < 65 || event.Rune() > 122 {
+	//Ctrl + S: Upload (tbd??)
+	//Ctrl + N: Sort by name (reversible)
+	//Ctrl + D: Sort by date (reversible)
+	//Ctrl + A: Select All
+	//Ctrl + U: Deselct All
+	var err error
+	cur := a.GDFSTree.GetCurrentNode()
+
+	if event.Rune() > 65 && event.Rune() < 122 {
+		//Jump to char
+		keyChar := string(event.Rune())
+		err = a.JumpToNodeKeyPrompt(cur, keyChar)
+		if err != nil {
+			a.WriteOutput(fmt.Sprintf("error switching: %s", err.Error()))
+		}
+		return nil
+	}
+
+	switch event.Key() {
+	case tcell.KeyCtrlS:
+		err = a.UploadPrompt(cur)
+	case tcell.KeyCtrlN:
+		err = a.SwitchOutputPrompt(cur, "name")
+	case tcell.KeyCtrlD:
+		err = a.SwitchOutputPrompt(cur, "modifiedTime")
+	case tcell.KeyCtrlA:
+		err = a.SelectAllPrompt(cur, true)
+	case tcell.KeyCtrlU:
+		err = a.SelectAllPrompt(cur, false)
+	case tcell.KeyInsert:
+		err = a.CreateGDFolderPrompt(cur)
+	case tcell.KeyDelete:
+		err = a.DeleteGDPrompt(cur)
+	case tcell.KeyPgUp:
+		err = a.JumpToNodePos(cur, -15)
+	case tcell.KeyPgDn:
+		err = a.JumpToNodePos(cur, 15)
+	case tcell.KeyBackspace:
+		err = a.JumpParentPrompt(cur)
+	default:
 		return event
 	}
-	currentNode := a.GDFSTree.GetCurrentNode()
-	if currentNode != nil {
-
-		reference := currentNode.GetReference()
-		fileRererence, ok := reference.(gdfs.GDFileReference)
-		if !ok {
-			// TODO
-		}
-		parentNode := fileRererence.Parent
-		if parentNode != nil {
-			siblings := parentNode.GetChildren()
-			if len(siblings) > 0 {
-				jumpToNode := utils.FilterNodeChildren(siblings, keyChar)
-				a.GDFSTree.SetCurrentNode(jumpToNode)
-			}
-		}
+	if err != nil {
+		a.WriteOutput(fmt.Sprintf("error switching: %s", err.Error()))
 	}
-	return event
+
+	return nil
 }
 
-// func (gdfs *GDFileSystem) SetChildren(node *tview.TreeNode) error {
+func (a *App) UploadPrompt(node *tview.TreeNode) error {
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		return fmt.Errorf("error casting")
+	}
+	totalUploadSize, err := a.GetTotalUploadSize()
+	if err != nil {
+		return err
+	}
+	msg := fmt.Sprintf("Uploading %d files. Total size: %s", len(a.FilesToUpload), totalUploadSize)
+	a.WriteOutput(msg)
 
-// 	reference := node.GetReference()
-// 	nodeReference, ok := reference.(FileReference)
-// 	if !ok {
-// 		return fmt.Errorf("error casting")
-// 	}
-// 	files, err := gdfs.GetFiles(nodeReference.File.Id, nodeReference.Shared)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	for _, file := range files.Files {
-// 		childReference := FileReference{
-// 			File:     file,
-// 			Download: false,
-// 			Parent:   node,
-// 			Virtual:  false,
-// 			Shared:   false,
-// 		}
-// 		child := tview.NewTreeNode(file.Name)
-// 		child.SetReference(childReference)
-// 		child.SetExpanded(false)
+	for _, mf := range a.FilesToUpload {
+		go a.UploadFile(ref.File.Id, mf)
+	}
 
-// 		if file.MimeType == "application/vnd.google-apps.folder" {
-// 			child.SetColor(tcell.ColorRed)
-// 		}
-// 		node.AddChild(child)
-// 	}
-// 	return nil
-// }
+	return nil
+}
 
-// func (gdfs *GDFileSystem) NodeSelectedFunc(node *tview.TreeNode) {
+func (a *App) SwitchOutputPrompt(node *tview.TreeNode, orderBy string) error {
 
-// 	originalNodeText := node.GetText()
-// 	node.SetText(originalNodeText + "...")
-// 	//gdfs.App.ForceDraw()
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		// TODO
+		return nil
+	}
+	parent := ref.Parent
+	parentRef := parent.GetReference().(gdfs.GDFileReference)
+	currentOrderBy := parentRef.OrderBy
+	var newOrderBy string
 
-// 	reference := node.GetReference()
-// 	fileReference, ok := reference.(FileReference)
-// 	if !ok {
-// 		fmt.Println("no ok...")
-// 		return
-// 	}
+	a.WriteOutput(fmt.Sprintf("ob: %s, cob: %s", orderBy, currentOrderBy))
 
-// 	if fileReference.File.MimeType == "application/vnd.google-apps.folder" {
+	switch {
+	case orderBy == "name" && currentOrderBy == "name":
+		newOrderBy = "name desc"
+	case orderBy == "modifiedTime" && currentOrderBy == "modifiedTime":
+		newOrderBy = "modifiedTime desc"
+	default:
+		newOrderBy = orderBy
+	}
 
-// 		if !fileReference.Virtual {
-// 			if len(node.GetChildren()) == 0 {
-// 				err := gdfs.SetChildren(node)
-// 				if err != nil {
-// 					log.Fatalf("err: %w", err)
-// 				}
-// 			}
-// 		}
-// 		node.SetExpanded(!node.IsExpanded())
-// 	} else {
-// 		fileReference.Download = !fileReference.Download
-// 		if fileReference.Download {
-// 			gdfs.FilesToDownload[fileReference.File.Id] = fileReference.File
-// 			node.SetColor(tcell.ColorTeal)
-// 		} else {
-// 			delete(gdfs.FilesToDownload, fileReference.File.Id)
-// 			node.SetColor(tcell.ColorWhite)
-// 		}
+	parentRef.OrderBy = newOrderBy
+	parent.SetReference(parentRef)
 
-// 	}
+	err := a.GDFS.SetChildren(parent)
+	if err != nil {
+		return err
+	}
+	parent.SetExpanded(true)
+	a.GDFSTree.SetCurrentNode(parent.GetChildren()[0])
 
-// 	node.SetReference(fileReference)
-// 	node.SetText(originalNodeText)
-// }
+	return nil
+}
 
-// func (gdfs *GDFileSystem) TreeInputFunc(event *tcell.EventKey) *tcell.EventKey {
+func (a *App) CreateGDFolderPrompt(node *tview.TreeNode) error {
 
-// 	//event.Key()
-// 	if event.Key() == tcell.KeyBackspace {
-// 		gdfs.App.Stop()
-// 	}
-// 	// keyChar := ""
-// 	// switch event.Key() {
-// 	// case tcell.KeyCtrlA:
-// 	// 	keyChar = "a"
-// 	// case tcell.KeyCtrlB:
-// 	// 	keyChar = "b"
-// 	// }
-// 	keyChar := string(event.Rune())
-// 	//fmt.Printf("key: %s, rune: %d\n", keyString, event.Rune())
-// 	if event.Rune() < 65 || event.Rune() > 122 {
-// 		return event
-// 	}
-// 	currentNode := gdfs.Tree.GetCurrentNode()
-// 	if currentNode != nil {
-// 		//fmt.Printf("current node: %s\n", currentNode.GetText())
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		return errors.ErrCasting
+	}
+	file := ref.File
+	if !utils.IsGDFolder(file) {
+		//TODO - get parent??
+		return nil
+	}
+	prompt := "Enter dir name: "
+	doneFunc := func(key tcell.Key) {
+		if key == tcell.KeyEnter {
+			//Create folder with name from input, write message, reset nodes children and expand node
+			newFolderName := a.GetInputText()
+			var msg string = ""
+			err := a.GDFS.CreateFolder(newFolderName, file.Id)
+			if err != nil {
+				msg = fmt.Sprintf("Error creating directory: %s", err.Error())
+			} else {
+				msg = "Created directory: " + newFolderName
+			}
+			a.WriteOutput(msg)
+			a.GDFS.SetChildren(node)
+			node.Expand()
+		}
+		//Reset
+		a.ResetInput()
+		a.tvApp.SetFocus(a.GDFSTree)
+	}
+	a.Prompt(prompt, doneFunc)
+	return nil
+}
 
-// 		reference := currentNode.GetReference()
-// 		fileRererence, ok := reference.(FileReference)
-// 		if !ok {
-// 			// TODO
-// 		}
-// 		parentNode := fileRererence.Parent
-// 		if parentNode != nil {
-// 			//fmt.Printf("parent node: %s\n", parentNode.GetText())
+func (a *App) DeleteGDPrompt(node *tview.TreeNode) error {
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		return errors.ErrCasting
+	}
+	isDir := utils.IsGDFolder(ref.File)
+	name := ref.File.Name
+	var prompt string
+	if isDir {
+		prompt = fmt.Sprintf("Delete gd directory %s ? (y/n): ", name)
+	} else {
+		prompt = fmt.Sprintf("Delete gd file %s ? (y/n): ", name)
+	}
 
-// 			siblings := parentNode.GetChildren()
-// 			if len(siblings) > 0 {
-// 				jumpToNode := utils.FilterNodeChildren(siblings, keyChar)
-// 				gdfs.Tree.SetCurrentNode(jumpToNode)
-// 			}
-// 		}
+	doneFunc := func(key tcell.Key) {
+		if key == tcell.KeyEnter {
+			//Create directory with name from input, write message, reset nodes children and expand node
+			answer := strings.ToLower(a.GetInputText())
+			if answer == "y" {
+				//delete dir
+				err := a.GDFS.DeleteFile(ref.File)
+				if err != nil {
+					msg := fmt.Sprintf("error deleting gd file: %s", err.Error())
+					a.WriteOutput(msg)
+				} else {
+					msg := fmt.Sprintf("Deleted gd file %s", ref.File.Name)
+					a.WriteOutput(msg)
+					//reload parent children, and set current node to parent
+					parent := ref.Parent
+					a.GDFS.SetChildren(parent)
+					a.GDFSTree.SetCurrentNode(parent)
+				}
+				//Reset
+				a.ResetInput()
+				a.tvApp.SetFocus(a.GDFSTree)
+			} else if answer == "n" {
+				a.ResetInput()
+				a.tvApp.SetFocus(a.GDFSTree)
+			} else {
+				//invalid answer
+				a.WriteOutput("invalid key")
+				a.Input.SetText("")
+			}
+		}
 
-// 	}
-// 	return event
-// }
+	}
+	a.Prompt(prompt, doneFunc)
+	return nil
+}
 
-// func (cli *GDriveCLI) TreeMouseFunc (action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+func (a *App) SelectAllPrompt(node *tview.TreeNode, download bool) error {
 
-// 	if action != tview.MouseLeftClick {
-// 		return
-// 	}
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		// TODO
+		return nil
+	}
+	parent := ref.Parent
 
-// 	action.
-// 	currentNode := cli.Tree.GetCurrentNode()
-// 	if currentNode != nil {
-// 		//fmt.Printf("current node: %s\n", currentNode.GetText())
+	children := parent.GetChildren()
+	for _, c := range children {
+		childRef, ok := c.GetReference().(gdfs.GDFileReference)
+		if !ok {
+			// TODO
+			return nil
+		}
+		if !utils.IsGDFolder(childRef.File) {
+			a.ToggleDownload(c, true, download)
+		}
+	}
 
-// 		reference := currentNode.GetReference()
-// 		fileRererence, ok := reference.(FileReference)
-// 		if !ok {
-// 			// TODO
-// 		}
-// 		parentNode := fileRererence.Parent
-// 		if parentNode != nil {
-// 			//fmt.Printf("parent node: %s\n", parentNode.GetText())
+	return nil
+}
 
-// 			siblings := parentNode.GetChildren()
-// 			if len(siblings) > 0 {
-// 				jumpToNode := utils.FilterNodeChildren(siblings, keyString)
-// 				cli.Tree.SetCurrentNode(jumpToNode)
-// 			}
-// 		}
+func (a *App) JumpToNodeKeyPrompt(node *tview.TreeNode, keyChar string) error {
 
-// 	}
-// 	return event
-// }
+	var jumpToNode *tview.TreeNode
+	var siblings []*tview.TreeNode
+
+	if node == nil {
+		return nil
+	}
+
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		return errors.ErrCasting
+	}
+	parentNode := ref.Parent
+	if parentNode != nil {
+		siblings = parentNode.GetChildren()
+	} else {
+		return nil
+	}
+	jumpToNode = utils.FilterNodeChildren(siblings, keyChar)
+	a.GDFSTree.SetCurrentNode(jumpToNode)
+	return nil
+}
+
+func (a *App) JumpToNodePos(node *tview.TreeNode, pos int) error {
+
+	var jumpToNode *tview.TreeNode
+	var siblings []*tview.TreeNode
+
+	if node == nil {
+		return nil
+	}
+
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		return errors.ErrCasting
+	}
+	parentNode := ref.Parent
+	if parentNode != nil {
+		siblings = parentNode.GetChildren()
+	} else {
+		return nil
+	}
+
+	jumpToNode = utils.JumpNodePosition(node, siblings, pos)
+	a.GDFSTree.SetCurrentNode(jumpToNode)
+	return nil
+}
+
+func (a *App) JumpParentPrompt(node *tview.TreeNode) error {
+
+	if node == nil {
+		return nil
+	}
+
+	ref, ok := node.GetReference().(gdfs.GDFileReference)
+	if !ok {
+		return errors.ErrCasting
+	}
+	parentNode := ref.Parent
+	if parentNode != nil {
+		a.GDFSTree.SetCurrentNode(parentNode)
+	}
+	return nil
+}
+
+func (a *App) UploadFile(parentID string, mf *myfile.MyFile) {
+
+	mf.InProgress = true
+	mf.Node.SetColor(config.TREE_IN_PROGRESS_COLOUR)
+
+	gFile := &drive.File{
+		Name:    mf.Name,
+		Parents: []string{parentID},
+	}
+	mf.GFile = gFile
+	err := a.GDFS.UploadFile(mf)
+	if err != nil {
+		a.WriteOutput(err.Error())
+	}
+}

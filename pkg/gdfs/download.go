@@ -1,7 +1,9 @@
 package gdfs
 
 import (
+	"context"
 	"fmt"
+	"gdrivecli/pkg/myfile"
 	"io"
 	"os"
 
@@ -10,17 +12,11 @@ import (
 
 func (gdfs *GDFileSystem) DownloadFile(file *drive.File, path string) error {
 
-	//file := gdfs.FilesToDownload[fileName]
-	//path := filepath.Join(root, file.Name)
 	f, err := os.Create(path)
 	defer f.Close()
 	if err != nil {
 		return fmt.Errorf("Unable to create file: %w", err)
 	}
-
-	// waitChan := make(chan struct{})
-	// ctx, cancel := context.WithCancel(context.Background())
-	// go utils.DisplayProgress(ctx, waitChan, f, file.Size)
 
 	resp, err := gdfs.Service.Files.Get(file.Id).Download()
 	if err != nil {
@@ -31,8 +27,27 @@ func (gdfs *GDFileSystem) DownloadFile(file *drive.File, path string) error {
 	if err != nil {
 		return fmt.Errorf("Unable copy file: %w", err)
 	}
-
-	// cancel()
-	// <-waitChan
 	return nil
+}
+
+func (gdfs *GDFileSystem) UploadFile(mf *myfile.MyFile) error {
+
+	f, err := os.Open(mf.Path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fStat, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	_, err = gdfs.Service.Files.
+		Create(mf.GFile).
+		ResumableMedia(context.Background(), f, fStat.Size(), "").
+		ProgressUpdater(func(current, total int64) {
+			mf.ProgressBar.Set64(current)
+		}).
+		Do()
+	return err
 }

@@ -6,13 +6,6 @@ import (
 	"log"
 )
 
-/* TODO
-- Upload to Gdrive
-- Check disk space before download
-- Jump to on FS tree
-- download entire folder (keep structure?)
-*/
-
 func main() {
 
 	gdfs, err := gdfs.NewGDFS()

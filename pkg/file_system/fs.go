@@ -10,14 +10,25 @@ import (
 	"github.com/shirou/gopsutil/disk"
 )
 
+type FileSystem struct {
+	FilesToUpload map[string]os.FileInfo
+}
+
 type FileReference struct {
 	FileName string
 	FilePath string
-	Download bool
+	Upload   bool
 	Parent   *tview.TreeNode
 }
 
-func GetPartitionNodes() ([]*tview.TreeNode, error) {
+func NewFS() *FileSystem {
+	fs := &FileSystem{
+		FilesToUpload: make(map[string]os.FileInfo, 0),
+	}
+	return fs
+}
+
+func (fs *FileSystem) GetPartitionNodes() ([]*tview.TreeNode, error) {
 
 	var nodes []*tview.TreeNode
 	partitions, err := disk.Partitions(false)
@@ -42,7 +53,7 @@ func GetPartitionNodes() ([]*tview.TreeNode, error) {
 
 }
 
-func SetFSChildren(node *tview.TreeNode) error {
+func (fs *FileSystem) SetFSChildren(node *tview.TreeNode) error {
 	node.ClearChildren()
 	ref := node.GetReference()
 	nodeRef, ok := ref.(FileReference)
@@ -62,7 +73,7 @@ func SetFSChildren(node *tview.TreeNode) error {
 		childReference := FileReference{
 			FileName: file.Name(),
 			FilePath: filepath.Join(nodeRef.FilePath, file.Name()),
-			Download: false,
+			Upload:   false,
 			Parent:   node,
 		}
 		child := tview.NewTreeNode(file.Name())
@@ -79,23 +90,32 @@ func SetFSChildren(node *tview.TreeNode) error {
 	return nil
 }
 
-func CreateDir(path string) string {
+func (fs *FileSystem) CreateDir(path string) error {
 
 	err := os.MkdirAll(path, os.ModePerm)
 	if err != nil {
-		return fmt.Sprintf("Error creating directory: %s", err.Error())
+		return err
 	}
-	return "Created directory: " + path
+	return nil
 }
 
-func Delete(path string) error {
+func (fs *FileSystem) Delete(path string) error {
 	return os.RemoveAll(path)
 }
 
-func IsDir(path string) (bool, error) {
+func (fs *FileSystem) IsDir(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return false, err
 	}
 	return info.IsDir(), nil
+}
+
+func (fs *FileSystem) GetTotalUploadSizeBytes() int64 {
+
+	var totalSize int64 = 0
+	for _, fileInfo := range fs.FilesToUpload {
+		totalSize += fileInfo.Size()
+	}
+	return totalSize
 }

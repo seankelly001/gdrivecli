@@ -1,0 +1,11 @@
+Instructions:
+
+Follow initial instructions to set up tokens etc
+
+2 screens, gdrive on left, local system on right
+
+Tab - switch between gdrive and local system
+Insert - create folder (local only)
+Delete - delete file (local only) (prompt in bottom left)
+Enter - select files for download (gdrive only)
+Ctrl + S - (local only) save all selected files for download to specified location

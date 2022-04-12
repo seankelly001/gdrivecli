@@ -1,14 +1,23 @@
-Seperate windows in cli
-1. gdrive folder structure
-2. local folder structure
-3. info (downloading/uploading.space etc)
-
 concurrent operations (upload download etc)
 add current things to queue (seperat window or?)
 
+arrange by last modified, filter text
+
+- Upload to Gdrive
+- Check disk space before download
+- Jump to on FS tree
+- download entire folder (keep structure?)
+- sort by last modified
 
 far future: multiple seperate structures (e.g. multiple gdrives, azure, aws, linux fs etc)
 
 design:
 interface: explorer
 methods: delve/to/from/open dir
+
+
+----
+interface FileSystemTree
+
+func GetChildren()
+func SetChildren()

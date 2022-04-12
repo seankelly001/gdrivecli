@@ -3,14 +3,17 @@ package gdfs
 import (
 	"fmt"
 	"gdrivecli/pkg/config"
+	"gdrivecli/pkg/utils"
 
 	"github.com/rivo/tview"
 	drive "google.golang.org/api/drive/v3"
 )
 
 type GDFileSystem struct {
-	Service         *drive.Service
-	FilesToDownload map[string]*drive.File
+	Service *drive.Service
+	//FilesToDownload map[string]*drive.File
+	//FilesToDownload map[string]*myfile.MyFile
+
 	//SizeBytes       int
 }
 
@@ -20,6 +23,7 @@ type GDFileReference struct {
 	Parent   *tview.TreeNode
 	Virtual  bool
 	Shared   bool
+	OrderBy  string
 }
 
 func NewGDFS() (*GDFileSystem, error) {
@@ -28,20 +32,21 @@ func NewGDFS() (*GDFileSystem, error) {
 		return nil, fmt.Errorf("error getting gdrive service: %w", err)
 	}
 	gdfs := &GDFileSystem{
-		Service:         srv,
-		FilesToDownload: make(map[string]*drive.File, 0),
+		Service: srv,
+		//ilesToDownload: make(map[string]*myfile.MyFile, 0),
 	}
 	return gdfs, nil
 }
 
 func (gdfs *GDFileSystem) SetChildren(node *tview.TreeNode) error {
 
+	node.ClearChildren()
 	reference := node.GetReference()
 	nodeReference, ok := reference.(GDFileReference)
 	if !ok {
 		return fmt.Errorf("error casting")
 	}
-	files, err := gdfs.GetFiles(nodeReference.File.Id, nodeReference.Shared)
+	files, err := gdfs.GetFiles(nodeReference.File.Id, nodeReference.OrderBy, nodeReference.Shared)
 	if err != nil {
 		return err
 	}
@@ -52,12 +57,13 @@ func (gdfs *GDFileSystem) SetChildren(node *tview.TreeNode) error {
 			Parent:   node,
 			Virtual:  false,
 			Shared:   false,
+			OrderBy:  "name",
 		}
 		child := tview.NewTreeNode(file.Name)
 		child.SetReference(childReference)
 		child.SetExpanded(false)
 
-		if file.MimeType == "application/vnd.google-apps.folder" {
+		if utils.IsGDFolder(file) {
 			child.SetColor(config.TREE_DIR_COLOUR)
 		} else {
 			child.SetColor(config.TREE_FILE_COLOUR)
